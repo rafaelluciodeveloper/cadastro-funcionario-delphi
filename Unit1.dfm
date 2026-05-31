@@ -3,7 +3,7 @@ object Form1: TForm1
   Top = 36
   Width = 908
   Height = 751
-  Caption = 'Cadastro de Funcion'#225'rios - Delphi 7 + Firebird + ZeosLib'
+  Caption = 'Cadastro de Funcion'#225'rios - Delphi 7 + PostgreSQL + ZeosLib'
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText

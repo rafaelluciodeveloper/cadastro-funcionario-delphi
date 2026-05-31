@@ -5,7 +5,7 @@ interface
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, DB, Grids, DBGrids, DBCtrls, StdCtrls, Mask, ExtCtrls,
-  ComCtrls, ShellAPI, ZConnection, ZDataset;
+  ComCtrls, ShellAPI, IniFiles, ZConnection, ZDataset;
 
 type
   TForm1 = class(TForm)
@@ -76,7 +76,11 @@ type
     Conn: TZConnection;
     Table1: TZTable;
     QAux: TZQuery;
-    procedure CriarConexao(const DataDir: string);
+    FPgHost, FPgUser, FPgPass, FPgDb, FPgLib: string;
+    FPgPort: Integer;
+    procedure CarregarConfig;
+    procedure CriarConexao;
+    procedure GarantirBancoExiste;
     procedure CriarTabelaSeNaoExiste;
     procedure MigrarTabelaSeNecessario;
     procedure ConfigurarCampos;
@@ -94,7 +98,7 @@ var
 
 implementation
 
-uses Unit2, Unit3;
+uses Unit2, Unit3, ZDbcPostgreSql; // garante o driver PostgreSQL linkado no exe
 
 {$R *.dfm}
 
@@ -123,14 +127,9 @@ function CertGetNameStringA(pCertContext: PCCERT_CONTEXT; dwType: DWORD;
   stdcall; external 'Crypt32.dll' name 'CertGetNameStringA';
 
 procedure TForm1.FormCreate(Sender: TObject);
-var
-  DataDir: string;
 begin
-  DataDir := ExtractFilePath(Application.ExeName) + 'Dados';
-  if not DirectoryExists(DataDir) then
-    ForceDirectories(DataDir);
-
-  CriarConexao(DataDir);
+  CarregarConfig;
+  CriarConexao;
   CriarTabelaSeNaoExiste;
   MigrarTabelaSeNecessario;
 
@@ -143,44 +142,134 @@ begin
   AtualizarBotoes;
 end;
 
-procedure TForm1.CriarConexao(const DataDir: string);
-const
-  // Pasta onde o ZIP do Firebird 3 (32-bit) foi extraido INTEIRO, com sua
-  // estrutura original (fbclient.dll + plugins\ + intl\ + icu*.dll + firebird.msg).
-  // A fbclient.dll localiza os demais arquivos relativos a ela.
-  FB_DIR = 'C:\Firebird3_x86';
+procedure TForm1.CarregarConfig;
 var
-  DbPath, FbClient: string;
+  Ini: TIniFile;
+  IniPath, ConfigDir, ExeDir, LibExe, AppData: string;
+  CriarPadrao: Boolean;
+
+  function LerEnv(const Nome: string): string;
+  var
+    Buf: array[0..MAX_PATH] of Char;
+    n: DWORD;
+  begin
+    n := Windows.GetEnvironmentVariable(PChar(Nome), Buf, Length(Buf));
+    if (n = 0) or (n > DWORD(Length(Buf))) then
+      Result := ''
+    else
+      SetString(Result, PChar(@Buf[0]), n);
+  end;
+
 begin
-  DbPath   := DataDir + '\Funcionarios.fdb';
-  FbClient := FB_DIR + '\fbclient.dll';
-  if not FileExists(FbClient) then  // fallback: arquivos copiados na pasta do .exe
-    FbClient := ExtractFilePath(Application.ExeName) + 'fbclient.dll';
+  ExeDir := ExtractFilePath(Application.ExeName);
+
+  // config.ini fica em %APPDATA%\CadastroFuncionario (gravavel sem admin).
+  AppData := LerEnv('APPDATA');
+  if AppData = '' then
+    AppData := ExeDir;   // fallback se a variavel nao existir
+  ConfigDir := IncludeTrailingPathDelimiter(AppData) + 'CadastroFuncionario';
+  if not DirectoryExists(ConfigDir) then
+    ForceDirectories(ConfigDir);
+  IniPath := IncludeTrailingPathDelimiter(ConfigDir) + 'config.ini';
+  CriarPadrao := not FileExists(IniPath);
+
+  Ini := TIniFile.Create(IniPath);
+  try
+    FPgHost := Ini.ReadString('Banco', 'Host', 'localhost');
+    FPgPort := Ini.ReadInteger('Banco', 'Porta', 5432);
+    FPgUser := Ini.ReadString('Banco', 'Usuario', 'postgres');
+    FPgPass := Ini.ReadString('Banco', 'Senha', 'postgres');
+    FPgDb   := Ini.ReadString('Banco', 'Database', 'funcionarios');
+    FPgLib  := Ini.ReadString('Banco', 'LibPq', '');
+
+    // Na primeira execucao grava um config.ini modelo em %APPDATA%.
+    if CriarPadrao then
+    begin
+      Ini.WriteString ('Banco', 'Host',     FPgHost);
+      Ini.WriteInteger('Banco', 'Porta',    FPgPort);
+      Ini.WriteString ('Banco', 'Usuario',  FPgUser);
+      Ini.WriteString ('Banco', 'Senha',    FPgPass);
+      Ini.WriteString ('Banco', 'Database', FPgDb);
+      // LibPq vazio = procura libpq.dll ao lado do .exe automaticamente.
+      Ini.WriteString ('Banco', 'LibPq',    '');
+    end;
+  finally
+    Ini.Free;
+  end;
+
+  // Caminho do libpq.dll (32-bit): 1) o do .ini se valido; 2) ao lado do .exe
+  // (padrao do instalador); 3) pasta de dev como ultimo recurso.
+  if (FPgLib = '') or (not FileExists(FPgLib)) then
+  begin
+    LibExe := ExeDir + 'libpq.dll';
+    if FileExists(LibExe) then
+      FPgLib := LibExe
+    else
+      FPgLib := 'C:\Users\rafae\pg32client\libpq.dll';
+  end;
+end;
+
+procedure TForm1.GarantirBancoExiste;
+var
+  Boot: TZConnection;
+  Q: TZQuery;
+  Existe: Boolean;
+begin
+  // PostgreSQL nao cria banco "on connect". Conecta no banco padrao 'postgres'
+  // e executa CREATE DATABASE se o banco alvo ainda nao existir.
+  Boot := TZConnection.Create(nil);
+  try
+    Boot.Protocol       := 'postgresql';
+    Boot.HostName       := FPgHost;
+    Boot.Port           := FPgPort;
+    Boot.Database       := 'postgres';
+    Boot.User           := FPgUser;
+    Boot.Password       := FPgPass;
+    Boot.LoginPrompt    := False;
+    Boot.AutoCommit     := True;   // CREATE DATABASE nao roda dentro de transacao
+    Boot.ClientCodepage := 'WIN1252';
+    if FileExists(FPgLib) then
+      Boot.LibraryLocation := FPgLib;
+    Boot.Connected := True;
+
+    Q := TZQuery.Create(nil);
+    try
+      Q.Connection := Boot;
+      Q.SQL.Text := 'SELECT count(*) FROM pg_database WHERE datname = :N';
+      Q.ParamByName('N').AsString := FPgDb;
+      Q.Open;
+      Existe := Q.Fields[0].AsInteger > 0;
+      Q.Close;
+      if not Existe then
+      begin
+        Q.SQL.Text := 'CREATE DATABASE ' + FPgDb;
+        Q.ExecSQL;
+      end;
+    finally
+      Q.Free;
+    end;
+  finally
+    Boot.Free;
+  end;
+end;
+
+procedure TForm1.CriarConexao;
+begin
+  GarantirBancoExiste;
 
   Conn := TZConnection.Create(Self);
-  // Zeos 8: protocolo unificado 'firebird' (detecta versao e modo embedded).
-  // Em Zeos 7.x o nome seria 'firebird-3.0' / 'firebird-2.5'.
-  Conn.Protocol      := 'firebird';
-  Conn.Database      := DbPath;
-  Conn.HostName      := '';          // vazio = Firebird Embedded (sem servidor)
-  Conn.User          := 'SYSDBA';
-  Conn.Password      := 'masterkey';
-  Conn.LoginPrompt   := False;
-  Conn.AutoCommit    := True;
-  // CHARACTER SET NONE: bytes gravados como recebidos (sem transliteracao).
-  // Ideal para app ANSI/Win1252 e evita depender do fbintl no modo Embedded.
-  Conn.ClientCodepage := 'NONE';
-  Conn.Properties.Values['dialect'] := '3';
-  if FileExists(FbClient) then
-    Conn.LibraryLocation := FbClient;
-
-  // Cria o banco automaticamente na primeira execucao.
-  if not FileExists(DbPath) then
-    Conn.Properties.Values['CreateNewDatabase'] :=
-      'CREATE DATABASE ' + QuotedStr(DbPath) +
-      ' USER ''SYSDBA'' PASSWORD ''masterkey''' +
-      ' PAGE_SIZE 8192 DEFAULT CHARACTER SET NONE';
-
+  Conn.Protocol       := 'postgresql';
+  Conn.HostName       := FPgHost;
+  Conn.Port           := FPgPort;
+  Conn.Database       := FPgDb;
+  Conn.User           := FPgUser;
+  Conn.Password       := FPgPass;
+  Conn.LoginPrompt    := False;
+  Conn.AutoCommit     := True;
+  // O servidor converte UTF8 <-> WIN1252; acentos do app ANSI funcionam direto.
+  Conn.ClientCodepage := 'WIN1252';
+  if FileExists(FPgLib) then
+    Conn.LibraryLocation := FPgLib;
   Conn.Connected := True;
 
   QAux := TZQuery.Create(Self);
@@ -188,7 +277,7 @@ begin
 
   Table1 := TZTable.Create(Self);
   Table1.Connection  := Conn;
-  Table1.TableName   := 'FUNCIONARIOS';
+  Table1.TableName   := 'funcionarios';
   Table1.BeforePost  := Table1BeforePost;
   Table1.AfterPost   := Table1AfterPost;
   Table1.AfterDelete := Table1AfterDelete;
@@ -209,7 +298,8 @@ function TForm1.TabelaExiste(const Nome: string): Boolean;
 begin
   QAux.Close;
   QAux.SQL.Text :=
-    'SELECT COUNT(*) FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = :N';
+    'SELECT count(*) FROM information_schema.tables ' +
+    'WHERE table_schema = ''public'' AND lower(table_name) = lower(:N)';
   QAux.ParamByName('N').AsString := Nome;
   QAux.Open;
   Result := QAux.Fields[0].AsInteger > 0;
@@ -220,8 +310,9 @@ function TForm1.ColunaExiste(const Tabela, Coluna: string): Boolean;
 begin
   QAux.Close;
   QAux.SQL.Text :=
-    'SELECT COUNT(*) FROM RDB$RELATION_FIELDS ' +
-    'WHERE RDB$RELATION_NAME = :T AND RDB$FIELD_NAME = :C';
+    'SELECT count(*) FROM information_schema.columns ' +
+    'WHERE table_schema = ''public'' AND lower(table_name) = lower(:T) ' +
+    'AND lower(column_name) = lower(:C)';
   QAux.ParamByName('T').AsString := Tabela;
   QAux.ParamByName('C').AsString := Coluna;
   QAux.Open;
@@ -232,7 +323,7 @@ end;
 function TForm1.ProximoCodigo: Integer;
 begin
   QAux.Close;
-  QAux.SQL.Text := 'SELECT NEXT VALUE FOR GEN_FUNCIONARIOS_ID FROM RDB$DATABASE';
+  QAux.SQL.Text := 'SELECT nextval(''gen_funcionarios_id'')';
   QAux.Open;
   Result := QAux.Fields[0].AsInteger;
   QAux.Close;
@@ -240,36 +331,31 @@ end;
 
 procedure TForm1.CriarTabelaSeNaoExiste;
 begin
-  if TabelaExiste('FUNCIONARIOS') then Exit;
+  if TabelaExiste('funcionarios') then Exit;
+
+  // Sequence criada antes da tabela: o DEFAULT da coluna codigo a referencia.
+  ExecDDL('CREATE SEQUENCE gen_funcionarios_id');
 
   ExecDDL(
-    'CREATE TABLE FUNCIONARIOS (' +
-    '  CODIGO        INTEGER NOT NULL,' +
-    '  NOME          VARCHAR(60) NOT NULL,' +
-    '  CPF           VARCHAR(14),' +
-    '  CARGO         VARCHAR(40),' +
-    '  SALARIO       NUMERIC(15,2),' +
-    '  DATAADMISSAO  DATE,' +
-    '  EMAIL         VARCHAR(80),' +
-    '  TELEFONE      VARCHAR(20),' +
-    '  ATIVO         BOOLEAN,' +
-    '  CERTIFICADO   VARCHAR(100),' +
-    '  CONSTRAINT PK_FUNCIONARIOS PRIMARY KEY (CODIGO))');
-
-  ExecDDL('CREATE SEQUENCE GEN_FUNCIONARIOS_ID');
-
-  ExecDDL(
-    'CREATE TRIGGER FUNCIONARIOS_BI FOR FUNCIONARIOS ' +
-    'ACTIVE BEFORE INSERT POSITION 0 AS BEGIN ' +
-    '  IF (NEW.CODIGO IS NULL) THEN ' +
-    '    NEW.CODIGO = NEXT VALUE FOR GEN_FUNCIONARIOS_ID; END');
+    'CREATE TABLE funcionarios (' +
+    '  codigo        integer NOT NULL DEFAULT nextval(''gen_funcionarios_id''),' +
+    '  nome          varchar(60) NOT NULL,' +
+    '  cpf           varchar(14),' +
+    '  cargo         varchar(40),' +
+    '  salario       numeric(15,2),' +
+    '  dataadmissao  date,' +
+    '  email         varchar(80),' +
+    '  telefone      varchar(20),' +
+    '  ativo         boolean,' +
+    '  certificado   varchar(100),' +
+    '  CONSTRAINT pk_funcionarios PRIMARY KEY (codigo))');
 end;
 
 procedure TForm1.MigrarTabelaSeNecessario;
 begin
-  // Firebird permite ALTER TABLE ADD sem perder dados (ao contrario do Paradox).
-  if not ColunaExiste('FUNCIONARIOS', 'CERTIFICADO') then
-    ExecDDL('ALTER TABLE FUNCIONARIOS ADD CERTIFICADO VARCHAR(100)');
+  // PostgreSQL permite ALTER TABLE ADD COLUMN sem perder dados.
+  if not ColunaExiste('funcionarios', 'certificado') then
+    ExecDDL('ALTER TABLE funcionarios ADD COLUMN certificado varchar(100)');
 end;
 
 procedure TForm1.CarregarCertificados;
@@ -409,7 +495,7 @@ begin
     StatusBar1.Panels[1].Text := ' Registro atual: ' + IntToStr(Table1.RecNo)
   else
     StatusBar1.Panels[1].Text := ' Nenhum registro';
-  StatusBar1.Panels[2].Text := ' Banco: Firebird 3 (ZeosLib + Embedded)';
+  StatusBar1.Panels[2].Text := ' Banco: PostgreSQL 18 (ZeosLib)';
 end;
 
 procedure TForm1.BtnNovoClick(Sender: TObject);

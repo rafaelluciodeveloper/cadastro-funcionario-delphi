@@ -1,3 +1,10 @@
+# config.ini gerado em runtime na raiz (o modelo fica em installer\config.ini)
+/config.ini
+
+# Saida do Inno Setup
+installer/Output/
+installer/postgres/
+
 # ===== Delphi 7 - artefatos de build =====
 *.dcu
 *.dcp
