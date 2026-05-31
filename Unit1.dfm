@@ -1,0 +1,412 @@
+object Form1: TForm1
+  Left = 268
+  Top = 36
+  Width = 908
+  Height = 751
+  Caption = 'Cadastro de Funcion'#225'rios - Delphi 7 + Paradox + BDE'
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'MS Sans Serif'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poScreenCenter
+  Scaled = False
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  PixelsPerInch = 96
+  TextHeight = 13
+  object PanelTopo: TPanel
+    Left = 0
+    Top = 0
+    Width = 892
+    Height = 48
+    Align = alTop
+    BevelOuter = bvNone
+    Color = clNavy
+    TabOrder = 0
+    object LblTitulo: TLabel
+      Left = 0
+      Top = 0
+      Width = 892
+      Height = 48
+      Align = alClient
+      Alignment = taCenter
+      Caption = 'CADASTRO DE FUNCION'#193'RIOS'
+      Color = clNavy
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWhite
+      Font.Height = -19
+      Font.Name = 'MS Sans Serif'
+      Font.Style = [fsBold]
+      ParentColor = False
+      ParentFont = False
+      Layout = tlCenter
+    end
+  end
+  object PanelBotoes: TPanel
+    Left = 762
+    Top = 257
+    Width = 130
+    Height = 433
+    Align = alRight
+    BevelOuter = bvLowered
+    TabOrder = 1
+    object BevelBotoes: TBevel
+      Left = 10
+      Top = 224
+      Width = 110
+      Height = 3
+      Shape = bsTopLine
+    end
+    object BtnNovo: TButton
+      Left = 10
+      Top = 12
+      Width = 110
+      Height = 32
+      Caption = '&Novo'
+      TabOrder = 0
+      OnClick = BtnNovoClick
+    end
+    object BtnEditar: TButton
+      Left = 10
+      Top = 50
+      Width = 110
+      Height = 32
+      Caption = '&Editar'
+      TabOrder = 1
+      OnClick = BtnEditarClick
+    end
+    object BtnSalvar: TButton
+      Left = 10
+      Top = 88
+      Width = 110
+      Height = 32
+      Caption = '&Salvar'
+      TabOrder = 2
+      OnClick = BtnSalvarClick
+    end
+    object BtnCancelar: TButton
+      Left = 10
+      Top = 126
+      Width = 110
+      Height = 32
+      Caption = '&Cancelar'
+      TabOrder = 3
+      OnClick = BtnCancelarClick
+    end
+    object BtnExcluir: TButton
+      Left = 10
+      Top = 180
+      Width = 110
+      Height = 32
+      Caption = 'E&xcluir'
+      TabOrder = 4
+      OnClick = BtnExcluirClick
+    end
+    object BtnRelatorio: TButton
+      Left = 10
+      Top = 235
+      Width = 110
+      Height = 32
+      Caption = '&Relat'#243'rio'
+      TabOrder = 5
+      OnClick = BtnRelatorioClick
+    end
+    object BtnImportar: TButton
+      Left = 10
+      Top = 273
+      Width = 110
+      Height = 32
+      Caption = '&Importar CSV'
+      TabOrder = 6
+      OnClick = BtnImportarClick
+    end
+    object BtnExemplo: TButton
+      Left = 10
+      Top = 311
+      Width = 110
+      Height = 32
+      Caption = 'Gerar &Exemplo'
+      TabOrder = 7
+      OnClick = BtnExemploClick
+    end
+    object BtnAssinarXML: TButton
+      Left = 10
+      Top = 349
+      Width = 110
+      Height = 32
+      Caption = 'Assinar &XML'
+      TabOrder = 8
+      OnClick = BtnAssinarXMLClick
+    end
+    object BtnSair: TButton
+      Left = 10
+      Top = 395
+      Width = 110
+      Height = 32
+      Caption = 'S&air'
+      TabOrder = 9
+      OnClick = BtnSairClick
+    end
+  end
+  object GroupBoxDados: TGroupBox
+    Left = 0
+    Top = 48
+    Width = 892
+    Height = 169
+    Align = alTop
+    Caption = ' Dados do Funcion'#225'rio '
+    TabOrder = 2
+    object LblCodigo: TLabel
+      Left = 12
+      Top = 22
+      Width = 36
+      Height = 13
+      Caption = 'C'#243'digo:'
+    end
+    object LblNome: TLabel
+      Left = 104
+      Top = 22
+      Width = 31
+      Height = 13
+      Caption = 'Nome:'
+    end
+    object LblCPF: TLabel
+      Left = 568
+      Top = 22
+      Width = 23
+      Height = 13
+      Caption = 'CPF:'
+    end
+    object LblEmail: TLabel
+      Left = 12
+      Top = 68
+      Width = 31
+      Height = 13
+      Caption = 'E-mail:'
+    end
+    object LblTelefone: TLabel
+      Left = 384
+      Top = 68
+      Width = 45
+      Height = 13
+      Caption = 'Telefone:'
+    end
+    object LblCargo: TLabel
+      Left = 540
+      Top = 68
+      Width = 31
+      Height = 13
+      Caption = 'Cargo:'
+    end
+    object LblSalario: TLabel
+      Left = 12
+      Top = 114
+      Width = 35
+      Height = 13
+      Caption = 'Sal'#225'rio:'
+    end
+    object LblData: TLabel
+      Left = 152
+      Top = 114
+      Width = 89
+      Height = 13
+      Caption = 'Data de Admiss'#227'o:'
+    end
+    object LblCertificado: TLabel
+      Left = 416
+      Top = 114
+      Width = 85
+      Height = 13
+      Caption = 'Certificado Digital:'
+    end
+    object DBEditCodigo: TDBEdit
+      Left = 12
+      Top = 38
+      Width = 80
+      Height = 21
+      Color = clBtnFace
+      DataField = 'Codigo'
+      DataSource = DataSource1
+      ReadOnly = True
+      TabOrder = 0
+    end
+    object DBEditNome: TDBEdit
+      Left = 104
+      Top = 38
+      Width = 449
+      Height = 21
+      CharCase = ecUpperCase
+      DataField = 'Nome'
+      DataSource = DataSource1
+      TabOrder = 1
+    end
+    object DBEditCPF: TDBEdit
+      Left = 568
+      Top = 38
+      Width = 137
+      Height = 21
+      DataField = 'CPF'
+      DataSource = DataSource1
+      TabOrder = 2
+    end
+    object DBEditEmail: TDBEdit
+      Left = 12
+      Top = 84
+      Width = 357
+      Height = 21
+      DataField = 'Email'
+      DataSource = DataSource1
+      TabOrder = 3
+    end
+    object DBEditTelefone: TDBEdit
+      Left = 384
+      Top = 84
+      Width = 137
+      Height = 21
+      DataField = 'Telefone'
+      DataSource = DataSource1
+      TabOrder = 4
+    end
+    object DBEditCargo: TDBEdit
+      Left = 540
+      Top = 84
+      Width = 165
+      Height = 21
+      CharCase = ecUpperCase
+      DataField = 'Cargo'
+      DataSource = DataSource1
+      TabOrder = 5
+    end
+    object DBEditSalario: TDBEdit
+      Left = 12
+      Top = 130
+      Width = 121
+      Height = 21
+      DataField = 'Salario'
+      DataSource = DataSource1
+      TabOrder = 6
+    end
+    object DBEditData: TDBEdit
+      Left = 152
+      Top = 130
+      Width = 113
+      Height = 21
+      DataField = 'DataAdmissao'
+      DataSource = DataSource1
+      TabOrder = 7
+    end
+    object DBCheckAtivo: TDBCheckBox
+      Left = 296
+      Top = 132
+      Width = 105
+      Height = 17
+      Caption = 'Funcion'#225'rio Ativo'
+      DataField = 'Ativo'
+      DataSource = DataSource1
+      TabOrder = 8
+      ValueChecked = 'True'
+      ValueUnchecked = 'False'
+    end
+    object ComboCertificado: TDBComboBox
+      Left = 416
+      Top = 130
+      Width = 320
+      Height = 21
+      DataSource = DataSource1
+      ItemHeight = 13
+      TabOrder = 9
+    end
+  end
+  object PanelBusca: TPanel
+    Left = 0
+    Top = 217
+    Width = 892
+    Height = 40
+    Align = alTop
+    BevelOuter = bvLowered
+    TabOrder = 3
+    object LblLocalizar: TLabel
+      Left = 12
+      Top = 14
+      Width = 92
+      Height = 13
+      Caption = 'Localizar por nome:'
+    end
+    object EditLocalizar: TEdit
+      Left = 112
+      Top = 10
+      Width = 401
+      Height = 21
+      CharCase = ecUpperCase
+      TabOrder = 0
+      OnChange = EditLocalizarChange
+    end
+    object BtnBuscar: TButton
+      Left = 520
+      Top = 8
+      Width = 90
+      Height = 25
+      Caption = '&Buscar'
+      TabOrder = 1
+      OnClick = BtnBuscarClick
+    end
+    object BtnLimpar: TButton
+      Left = 616
+      Top = 8
+      Width = 90
+      Height = 25
+      Caption = '&Limpar'
+      TabOrder = 2
+      OnClick = BtnLimparClick
+    end
+  end
+  object DBGrid1: TDBGrid
+    Left = 0
+    Top = 257
+    Width = 762
+    Height = 433
+    Align = alClient
+    DataSource = DataSource1
+    Options = [dgTitles, dgIndicator, dgColumnResize, dgColLines, dgRowLines, dgTabs, dgRowSelect, dgConfirmDelete, dgCancelOnExit]
+    TabOrder = 4
+    TitleFont.Charset = DEFAULT_CHARSET
+    TitleFont.Color = clWindowText
+    TitleFont.Height = -11
+    TitleFont.Name = 'MS Sans Serif'
+    TitleFont.Style = []
+  end
+  object StatusBar1: TStatusBar
+    Left = 0
+    Top = 690
+    Width = 892
+    Height = 22
+    Panels = <
+      item
+        Width = 260
+      end
+      item
+        Width = 220
+      end
+      item
+        Width = 250
+      end>
+  end
+  object Table1: TTable
+    BeforePost = Table1BeforePost
+    AfterPost = Table1AfterPost
+    AfterDelete = Table1AfterDelete
+    AfterScroll = Table1AfterScroll
+    TableType = ttParadox
+    Left = 800
+    Top = 8
+  end
+  object DataSource1: TDataSource
+    DataSet = Table1
+    OnStateChange = DataSource1StateChange
+    Left = 840
+    Top = 8
+  end
+end
