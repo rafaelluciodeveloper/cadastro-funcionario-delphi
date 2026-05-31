@@ -117,11 +117,36 @@ function CertGetNameStringA(pCertContext: PCCERT_CONTEXT; dwType: DWORD;
 
 procedure TForm1.FormCreate(Sender: TObject);
 var
-  DataDir: string;
+  DataDir, PrivDir, AppData: string;
+
+  function LerEnv(const Nome: string): string;
+  var
+    Buf: array[0..MAX_PATH] of Char;
+    n: DWORD;
+  begin
+    n := Windows.GetEnvironmentVariable(PChar(Nome), Buf, Length(Buf));
+    if (n = 0) or (n > DWORD(Length(Buf))) then
+      Result := ''
+    else
+      SetString(Result, PChar(@Buf[0]), n);
+  end;
+
 begin
-  DataDir := ExtractFilePath(Application.ExeName) + 'Dados';
+  // Dados em %APPDATA%\CadastroFuncionario (gravavel sem admin).
+  AppData := LerEnv('APPDATA');
+  if AppData = '' then
+    AppData := ExtractFilePath(Application.ExeName);
+  DataDir := IncludeTrailingPathDelimiter(AppData) + 'CadastroFuncionario';
   if not DirectoryExists(DataDir) then
     ForceDirectories(DataDir);
+  PrivDir := IncludeTrailingPathDelimiter(DataDir) + 'priv';
+  if not DirectoryExists(PrivDir) then
+    ForceDirectories(PrivDir);
+
+  // BDE/Paradox: NetDir (PDOXUSRS.NET) e PrivateDir precisam ser gravaveis,
+  // senao da "Network initialization failed" / erro de arquivo .NET.
+  Session.NetFileDir := DataDir;
+  Session.PrivateDir := PrivDir;
 
   Table1.DatabaseName := DataDir;
   Table1.TableName    := 'Funcionarios.db';

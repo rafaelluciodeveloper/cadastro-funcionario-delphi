@@ -1,0 +1,27 @@
+# ===== Delphi 7 - artefatos de build =====
+*.dcu
+*.dcp
+*.bpl
+*.exe
+*.dof
+*.cfg
+*.dsk
+*.local
+*.identcache
+*.map
+*.drc
+*.ddp
+*.dsm
+*.bak
+
+# Backups do editor do Delphi (.~pas, .~dfm, .~dpr, ...)
+*.~*
+
+# Saida do Inno Setup
+installer/Output/
+
+# Dados Paradox gerados em runtime (agora ficam em %APPDATA%)
+Dados/
+
+# BDE copiado localmente para a pasta do projeto (se houver)
+/BDE/
