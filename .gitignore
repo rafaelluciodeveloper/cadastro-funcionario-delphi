@@ -1,3 +1,6 @@
+# Saida do Inno Setup
+installer/Output/
+
 # ===== Delphi 7 - artefatos de build =====
 *.dcu
 *.dcp

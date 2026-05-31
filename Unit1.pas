@@ -5,7 +5,7 @@ interface
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, DB, Grids, DBGrids, DBCtrls, StdCtrls, Mask, ExtCtrls,
-  ComCtrls, ShellAPI, ZConnection, ZDataset;
+  ComCtrls, ShellAPI, IniFiles, ZConnection, ZDataset;
 
 type
   TForm1 = class(TForm)
@@ -76,7 +76,9 @@ type
     Conn: TZConnection;
     Table1: TZTable;
     QAux: TZQuery;
-    procedure CriarConexao(const DataDir: string);
+    FDbPath, FFbClient: string;
+    procedure CarregarConfig;
+    procedure CriarConexao;
     procedure CriarTabelaSeNaoExiste;
     procedure MigrarTabelaSeNecessario;
     procedure ConfigurarCampos;
@@ -123,14 +125,9 @@ function CertGetNameStringA(pCertContext: PCCERT_CONTEXT; dwType: DWORD;
   stdcall; external 'Crypt32.dll' name 'CertGetNameStringA';
 
 procedure TForm1.FormCreate(Sender: TObject);
-var
-  DataDir: string;
 begin
-  DataDir := ExtractFilePath(Application.ExeName) + 'Dados';
-  if not DirectoryExists(DataDir) then
-    ForceDirectories(DataDir);
-
-  CriarConexao(DataDir);
+  CarregarConfig;
+  CriarConexao;
   CriarTabelaSeNaoExiste;
   MigrarTabelaSeNecessario;
 
@@ -143,25 +140,78 @@ begin
   AtualizarBotoes;
 end;
 
-procedure TForm1.CriarConexao(const DataDir: string);
-const
-  // Pasta onde o ZIP do Firebird 3 (32-bit) foi extraido INTEIRO, com sua
-  // estrutura original (fbclient.dll + plugins\ + intl\ + icu*.dll + firebird.msg).
-  // A fbclient.dll localiza os demais arquivos relativos a ela.
-  FB_DIR = 'C:\Firebird3_x86';
+procedure TForm1.CarregarConfig;
 var
-  DbPath, FbClient: string;
-begin
-  DbPath   := DataDir + '\Funcionarios.fdb';
-  FbClient := FB_DIR + '\fbclient.dll';
-  if not FileExists(FbClient) then  // fallback: arquivos copiados na pasta do .exe
-    FbClient := ExtractFilePath(Application.ExeName) + 'fbclient.dll';
+  Ini: TIniFile;
+  IniPath, ConfigDir, ExeDir, AppData, DbDir, LibIni, LibExe: string;
+  CriarPadrao: Boolean;
 
+  function LerEnv(const Nome: string): string;
+  var
+    Buf: array[0..MAX_PATH] of Char;
+    n: DWORD;
+  begin
+    n := Windows.GetEnvironmentVariable(PChar(Nome), Buf, Length(Buf));
+    if (n = 0) or (n > DWORD(Length(Buf))) then
+      Result := ''
+    else
+      SetString(Result, PChar(@Buf[0]), n);
+  end;
+
+begin
+  ExeDir := ExtractFilePath(Application.ExeName);
+
+  // config.ini em %APPDATA%\CadastroFuncionario (gravavel sem admin).
+  AppData := LerEnv('APPDATA');
+  if AppData = '' then
+    AppData := ExeDir;
+  ConfigDir := IncludeTrailingPathDelimiter(AppData) + 'CadastroFuncionario';
+  if not DirectoryExists(ConfigDir) then
+    ForceDirectories(ConfigDir);
+  IniPath := IncludeTrailingPathDelimiter(ConfigDir) + 'config.ini';
+  CriarPadrao := not FileExists(IniPath);
+
+  Ini := TIniFile.Create(IniPath);
+  try
+    DbDir  := Ini.ReadString('Banco', 'DatabaseDir', '');
+    LibIni := Ini.ReadString('Banco', 'FbClient', '');
+    if CriarPadrao then
+    begin
+      // Vazios = usar os padroes (banco em %APPDATA%, fbclient ao lado do .exe).
+      Ini.WriteString('Banco', 'DatabaseDir', '');
+      Ini.WriteString('Banco', 'FbClient',    '');
+    end;
+  finally
+    Ini.Free;
+  end;
+
+  // Pasta do banco .fdb: a do config.ini, senao %APPDATA%\CadastroFuncionario.
+  if DbDir = '' then
+    DbDir := ConfigDir;
+  if not DirectoryExists(DbDir) then
+    ForceDirectories(DbDir);
+  FDbPath := IncludeTrailingPathDelimiter(DbDir) + 'Funcionarios.fdb';
+
+  // fbclient.dll (32-bit) + runtime embedded: 1) o do .ini; 2) ao lado do .exe
+  // (padrao do instalador); 3) pasta de dev como ultimo recurso.
+  if (LibIni <> '') and FileExists(LibIni) then
+    FFbClient := LibIni
+  else
+  begin
+    LibExe := ExeDir + 'fbclient.dll';
+    if FileExists(LibExe) then
+      FFbClient := LibExe
+    else
+      FFbClient := 'C:\Firebird3_x86\fbclient.dll';
+  end;
+end;
+
+procedure TForm1.CriarConexao;
+begin
   Conn := TZConnection.Create(Self);
   // Zeos 8: protocolo unificado 'firebird' (detecta versao e modo embedded).
-  // Em Zeos 7.x o nome seria 'firebird-3.0' / 'firebird-2.5'.
   Conn.Protocol      := 'firebird';
-  Conn.Database      := DbPath;
+  Conn.Database      := FDbPath;
   Conn.HostName      := '';          // vazio = Firebird Embedded (sem servidor)
   Conn.User          := 'SYSDBA';
   Conn.Password      := 'masterkey';
@@ -171,13 +221,13 @@ begin
   // Ideal para app ANSI/Win1252 e evita depender do fbintl no modo Embedded.
   Conn.ClientCodepage := 'NONE';
   Conn.Properties.Values['dialect'] := '3';
-  if FileExists(FbClient) then
-    Conn.LibraryLocation := FbClient;
+  if FileExists(FFbClient) then
+    Conn.LibraryLocation := FFbClient;
 
   // Cria o banco automaticamente na primeira execucao.
-  if not FileExists(DbPath) then
+  if not FileExists(FDbPath) then
     Conn.Properties.Values['CreateNewDatabase'] :=
-      'CREATE DATABASE ' + QuotedStr(DbPath) +
+      'CREATE DATABASE ' + QuotedStr(FDbPath) +
       ' USER ''SYSDBA'' PASSWORD ''masterkey''' +
       ' PAGE_SIZE 8192 DEFAULT CHARACTER SET NONE';
 
