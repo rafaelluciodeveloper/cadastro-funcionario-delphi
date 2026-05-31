@@ -4,8 +4,8 @@ interface
 
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
-  Dialogs, DB, DBTables, Grids, DBGrids, DBCtrls, StdCtrls, Mask, ExtCtrls,
-  ComCtrls, ShellAPI;
+  Dialogs, DB, Grids, DBGrids, DBCtrls, StdCtrls, Mask, ExtCtrls,
+  ComCtrls, ShellAPI, ZConnection, ZDataset;
 
 type
   TForm1 = class(TForm)
@@ -50,7 +50,6 @@ type
     BtnSair: TButton;
     DBGrid1: TDBGrid;
     StatusBar1: TStatusBar;
-    Table1: TTable;
     DataSource1: TDataSource;
     procedure FormCreate(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
@@ -74,12 +73,20 @@ type
     procedure EditLocalizarChange(Sender: TObject);
   private
     FImportando: Boolean;
+    Conn: TZConnection;
+    Table1: TZTable;
+    QAux: TZQuery;
+    procedure CriarConexao(const DataDir: string);
     procedure CriarTabelaSeNaoExiste;
+    procedure MigrarTabelaSeNecessario;
     procedure ConfigurarCampos;
     procedure AtualizarStatus;
     procedure AtualizarBotoes;
     procedure CarregarCertificados;
-    procedure MigrarTabelaSeNecessario(const DataDir: string);
+    procedure ExecDDL(const SQL: string);
+    function TabelaExiste(const Nome: string): Boolean;
+    function ColunaExiste(const Tabela, Coluna: string): Boolean;
+    function ProximoCodigo: Integer;
   end;
 
 var
@@ -123,14 +130,11 @@ begin
   if not DirectoryExists(DataDir) then
     ForceDirectories(DataDir);
 
-  Table1.DatabaseName := DataDir;
-  Table1.TableName    := 'Funcionarios.db';
-  Table1.TableType    := ttParadox;
-
+  CriarConexao(DataDir);
   CriarTabelaSeNaoExiste;
+  MigrarTabelaSeNecessario;
 
   Table1.Open;
-  MigrarTabelaSeNecessario(DataDir);
   if Table1.FindField('Certificado') <> nil then
     ComboCertificado.DataField := 'Certificado';
   ConfigurarCampos;
@@ -139,28 +143,133 @@ begin
   AtualizarBotoes;
 end;
 
-procedure TForm1.MigrarTabelaSeNecessario(const DataDir: string);
+procedure TForm1.CriarConexao(const DataDir: string);
+const
+  // Pasta onde o ZIP do Firebird 3 (32-bit) foi extraido INTEIRO, com sua
+  // estrutura original (fbclient.dll + plugins\ + intl\ + icu*.dll + firebird.msg).
+  // A fbclient.dll localiza os demais arquivos relativos a ela.
+  FB_DIR = 'C:\Firebird3_x86';
+var
+  DbPath, FbClient: string;
 begin
-  if Table1.FindField('Certificado') <> nil then Exit;
+  DbPath   := DataDir + '\Funcionarios.fdb';
+  FbClient := FB_DIR + '\fbclient.dll';
+  if not FileExists(FbClient) then  // fallback: arquivos copiados na pasta do .exe
+    FbClient := ExtractFilePath(Application.ExeName) + 'fbclient.dll';
 
-  if MessageDlg('A tabela precisa ser atualizada para incluir o campo ' +
-                'Certificado Digital.'#13#10#13#10 +
-                'Os dados existentes ser'#227'o apagados. Use os bot'#245'es ' +
-                '"Gerar Exemplo" e "Importar CSV" para recriar.'#13#10#13#10 +
-                'Continuar?', mtWarning, [mbYes, mbNo], 0) <> mrYes then
-  begin
-    Application.Terminate;
-    Exit;
-  end;
+  Conn := TZConnection.Create(Self);
+  // Zeos 8: protocolo unificado 'firebird' (detecta versao e modo embedded).
+  // Em Zeos 7.x o nome seria 'firebird-3.0' / 'firebird-2.5'.
+  Conn.Protocol      := 'firebird';
+  Conn.Database      := DbPath;
+  Conn.HostName      := '';          // vazio = Firebird Embedded (sem servidor)
+  Conn.User          := 'SYSDBA';
+  Conn.Password      := 'masterkey';
+  Conn.LoginPrompt   := False;
+  Conn.AutoCommit    := True;
+  // CHARACTER SET NONE: bytes gravados como recebidos (sem transliteracao).
+  // Ideal para app ANSI/Win1252 e evita depender do fbintl no modo Embedded.
+  Conn.ClientCodepage := 'NONE';
+  Conn.Properties.Values['dialect'] := '3';
+  if FileExists(FbClient) then
+    Conn.LibraryLocation := FbClient;
 
-  Table1.Close;
-  DeleteFile(DataDir + '\Funcionarios.db');
-  DeleteFile(DataDir + '\Funcionarios.PX');
-  DeleteFile(DataDir + '\Funcionarios.XG0');
-  DeleteFile(DataDir + '\Funcionarios.YG0');
-  DeleteFile(DataDir + '\Funcionarios.MB');
-  CriarTabelaSeNaoExiste;
-  Table1.Open;
+  // Cria o banco automaticamente na primeira execucao.
+  if not FileExists(DbPath) then
+    Conn.Properties.Values['CreateNewDatabase'] :=
+      'CREATE DATABASE ' + QuotedStr(DbPath) +
+      ' USER ''SYSDBA'' PASSWORD ''masterkey''' +
+      ' PAGE_SIZE 8192 DEFAULT CHARACTER SET NONE';
+
+  Conn.Connected := True;
+
+  QAux := TZQuery.Create(Self);
+  QAux.Connection := Conn;
+
+  Table1 := TZTable.Create(Self);
+  Table1.Connection  := Conn;
+  Table1.TableName   := 'FUNCIONARIOS';
+  Table1.BeforePost  := Table1BeforePost;
+  Table1.AfterPost   := Table1AfterPost;
+  Table1.AfterDelete := Table1AfterDelete;
+  Table1.AfterScroll := Table1AfterScroll;
+  DataSource1.DataSet := Table1;
+end;
+
+procedure TForm1.ExecDDL(const SQL: string);
+begin
+  QAux.Close;
+  QAux.SQL.Text := SQL;
+  QAux.ExecSQL;
+  if not Conn.AutoCommit then
+    Conn.Commit;
+end;
+
+function TForm1.TabelaExiste(const Nome: string): Boolean;
+begin
+  QAux.Close;
+  QAux.SQL.Text :=
+    'SELECT COUNT(*) FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = :N';
+  QAux.ParamByName('N').AsString := Nome;
+  QAux.Open;
+  Result := QAux.Fields[0].AsInteger > 0;
+  QAux.Close;
+end;
+
+function TForm1.ColunaExiste(const Tabela, Coluna: string): Boolean;
+begin
+  QAux.Close;
+  QAux.SQL.Text :=
+    'SELECT COUNT(*) FROM RDB$RELATION_FIELDS ' +
+    'WHERE RDB$RELATION_NAME = :T AND RDB$FIELD_NAME = :C';
+  QAux.ParamByName('T').AsString := Tabela;
+  QAux.ParamByName('C').AsString := Coluna;
+  QAux.Open;
+  Result := QAux.Fields[0].AsInteger > 0;
+  QAux.Close;
+end;
+
+function TForm1.ProximoCodigo: Integer;
+begin
+  QAux.Close;
+  QAux.SQL.Text := 'SELECT NEXT VALUE FOR GEN_FUNCIONARIOS_ID FROM RDB$DATABASE';
+  QAux.Open;
+  Result := QAux.Fields[0].AsInteger;
+  QAux.Close;
+end;
+
+procedure TForm1.CriarTabelaSeNaoExiste;
+begin
+  if TabelaExiste('FUNCIONARIOS') then Exit;
+
+  ExecDDL(
+    'CREATE TABLE FUNCIONARIOS (' +
+    '  CODIGO        INTEGER NOT NULL,' +
+    '  NOME          VARCHAR(60) NOT NULL,' +
+    '  CPF           VARCHAR(14),' +
+    '  CARGO         VARCHAR(40),' +
+    '  SALARIO       NUMERIC(15,2),' +
+    '  DATAADMISSAO  DATE,' +
+    '  EMAIL         VARCHAR(80),' +
+    '  TELEFONE      VARCHAR(20),' +
+    '  ATIVO         BOOLEAN,' +
+    '  CERTIFICADO   VARCHAR(100),' +
+    '  CONSTRAINT PK_FUNCIONARIOS PRIMARY KEY (CODIGO))');
+
+  ExecDDL('CREATE SEQUENCE GEN_FUNCIONARIOS_ID');
+
+  ExecDDL(
+    'CREATE TRIGGER FUNCIONARIOS_BI FOR FUNCIONARIOS ' +
+    'ACTIVE BEFORE INSERT POSITION 0 AS BEGIN ' +
+    '  IF (NEW.CODIGO IS NULL) THEN ' +
+    '    NEW.CODIGO = NEXT VALUE FOR GEN_FUNCIONARIOS_ID; END');
+end;
+
+procedure TForm1.MigrarTabelaSeNecessario;
+begin
+  // Firebird permite ALTER TABLE ADD sem perder dados (ao contrario do Paradox).
+  if not ColunaExiste('FUNCIONARIOS', 'CERTIFICADO') then
+    ExecDDL('ALTER TABLE FUNCIONARIOS ADD CERTIFICADO VARCHAR(100)');
 end;
 
 procedure TForm1.CarregarCertificados;
@@ -195,38 +304,6 @@ begin
   end;
 end;
 
-procedure TForm1.CriarTabelaSeNaoExiste;
-begin
-  if Table1.Exists then Exit;
-
-  with Table1 do
-  begin
-    with FieldDefs do
-    begin
-      Clear;
-      Add('Codigo',       ftAutoInc,  0,  True);
-      Add('Nome',         ftString,   60, True);
-      Add('CPF',          ftString,   14, False);
-      Add('Cargo',        ftString,   40, False);
-      Add('Salario',      ftCurrency, 0,  False);
-      Add('DataAdmissao', ftDate,     0,  False);
-      Add('Email',        ftString,   80, False);
-      Add('Telefone',     ftString,   20, False);
-      Add('Ativo',        ftBoolean,  0,  False);
-      Add('Certificado',  ftString,   100, False);
-    end;
-
-    with IndexDefs do
-    begin
-      Clear;
-      Add('',        'Codigo', [ixPrimary, ixUnique]);
-      Add('IdxNome', 'Nome',   [ixCaseInsensitive]);
-    end;
-
-    CreateTable;
-  end;
-end;
-
 procedure TForm1.ConfigurarCampos;
 begin
   Table1.FieldByName('Codigo').DisplayLabel       := 'Cod.';
@@ -240,7 +317,9 @@ begin
   Table1.FieldByName('Ativo').DisplayLabel        := 'Ativo';
   Table1.FieldByName('Certificado').DisplayLabel  := 'Certificado';
 
-  TCurrencyField(Table1.FieldByName('Salario')).DisplayFormat := 'R$ #,##0.00';
+  // No Zeos, NUMERIC pode vir como TBCDField/TFMTBCDField; TNumericField eh o
+  // ancestral comum e expoe DisplayFormat com seguranca.
+  TNumericField(Table1.FieldByName('Salario')).DisplayFormat := 'R$ #,##0.00';
   TDateField(Table1.FieldByName('DataAdmissao')).DisplayFormat := 'dd/mm/yyyy';
 
   Table1.FieldByName('CPF').EditMask          := '000\.000\.000\-00;1;_';
@@ -270,6 +349,8 @@ begin
 
   if DataSet.State = dsInsert then
   begin
+    if DataSet.FieldByName('Codigo').IsNull then
+      DataSet.FieldByName('Codigo').AsInteger := ProximoCodigo;
     if DataSet.FieldByName('DataAdmissao').IsNull then
       DataSet.FieldByName('DataAdmissao').AsDateTime := Date;
     if DataSet.FieldByName('Ativo').IsNull then
@@ -328,7 +409,7 @@ begin
     StatusBar1.Panels[1].Text := ' Registro atual: ' + IntToStr(Table1.RecNo)
   else
     StatusBar1.Panels[1].Text := ' Nenhum registro';
-  StatusBar1.Panels[2].Text := ' Banco: Paradox (BDE)';
+  StatusBar1.Panels[2].Text := ' Banco: Firebird 3 (ZeosLib + Embedded)';
 end;
 
 procedure TForm1.BtnNovoClick(Sender: TObject);

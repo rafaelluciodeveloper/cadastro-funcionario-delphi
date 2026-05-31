@@ -1,0 +1,46 @@
+# ===== Delphi 7 - artefatos de build =====
+*.dcu
+*.dcp
+*.dcpil
+*.bpl
+*.exe
+*.dof
+*.cfg
+*.dsk
+*.local
+*.identcache
+*.map
+*.drc
+*.ddp
+*.dsm
+*.bak
+
+# Backups do editor do Delphi (.~pas, .~dfm, .~dpr, ...)
+*.~*
+
+# ===== Banco Firebird (gerado em runtime) =====
+*.fdb
+*.fbk
+Dados/*.fdb
+firebird.log
+
+# ===== Arquivos antigos do Paradox/BDE (obsoletos apos migracao) =====
+Dados/*.db
+Dados/*.PX
+Dados/*.VAL
+Dados/*.XG?
+Dados/*.YG?
+Dados/*.MB
+
+# ===== Runtime do Firebird Embedded copiado para a pasta do projeto =====
+# (o ideal e mante-lo em C:\Firebird3_x86, fora do repo)
+fbclient.dll
+ib_util.dll
+icu*.dll
+firebird.msg
+firebird.conf
+/plugins/
+/intl/
+/tzdata/
+
+# Observacao: Project1.res e mantido versionado (icone/versao do app).

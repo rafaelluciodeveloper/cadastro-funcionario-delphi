@@ -3,7 +3,7 @@ object Form1: TForm1
   Top = 36
   Width = 908
   Height = 751
-  Caption = 'Cadastro de Funcion'#225'rios - Delphi 7 + Paradox + BDE'
+  Caption = 'Cadastro de Funcion'#225'rios - Delphi 7 + Firebird + ZeosLib'
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -394,17 +394,7 @@ object Form1: TForm1
         Width = 250
       end>
   end
-  object Table1: TTable
-    BeforePost = Table1BeforePost
-    AfterPost = Table1AfterPost
-    AfterDelete = Table1AfterDelete
-    AfterScroll = Table1AfterScroll
-    TableType = ttParadox
-    Left = 800
-    Top = 8
-  end
   object DataSource1: TDataSource
-    DataSet = Table1
     OnStateChange = DataSource1StateChange
     Left = 840
     Top = 8

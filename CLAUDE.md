@@ -1,13 +1,13 @@
 # Cadastro de Funcionários — Delphi 7
 
-Sistema CRUD desenvolvido para aprender/explorar Delphi 7 com tecnologias da época: BDE + Paradox, QuickReport 5, MSXML + CryptoAPI para assinatura digital eSocial.
+Sistema CRUD desenvolvido para aprender/explorar Delphi 7. Originalmente em BDE + Paradox; **migrado para Firebird 3 (Embedded) via ZeosLib** na branch `feat/firebird`. Usa também QuickReport 5, MSXML + CryptoAPI para assinatura digital eSocial.
 
 ## Stack
 
 | Camada | Tecnologia |
 |---|---|
 | IDE | Borland Delphi 7 |
-| Banco | Paradox (.DB) via BDE |
+| Banco | Firebird 3 Embedded (arquivo `.fdb`) via ZeosLib (`TZConnection` + `TZTable`) |
 | Relatórios | QuickReport 5.0 (paleta QReport, requer `dclqrt70.bpl` instalado) |
 | Assinatura digital | `Crypt32.dll` + `Advapi32.dll` + `Msxml2.DOMDocument.6.0` |
 | Encoding fonte | ANSI Windows-1252 (CP1252) |
@@ -20,26 +20,35 @@ Project1.dpr           Projeto principal (cria 3 forms)
 Unit1.pas/dfm          TForm1 — CRUD principal
 Unit2.pas/dfm          TFrmRelatorio — QuickReport (A4 portrait, 8 colunas)
 Unit3.pas/dfm          TFrmAssinarXML — Assinador XML eSocial
-Dados/Funcionarios.db  Tabela Paradox (criada na 1ª execução automaticamente)
+Dados/Funcionarios.fdb Banco Firebird (criado na 1ª execução automaticamente)
 funcionarios_exemplo.csv  Gerado pelo botão "Gerar Exemplo"
 ```
 
 ## Schema da tabela `Funcionarios`
 
-| Campo | Tipo | Tam | Notas |
-|---|---|---|---|
-| Codigo | ftAutoInc | — | PK |
-| Nome | ftString | 60 | obrigatório |
-| CPF | ftString | 14 | EditMask `000\.000\.000\-00` |
-| Cargo | ftString | 40 | |
-| Salario | ftCurrency | — | DisplayFormat `R$ #,##0.00` |
-| DataAdmissao | ftDate | — | EditMask `00/00/0000` |
-| Email | ftString | 80 | |
-| Telefone | ftString | 20 | EditMask `!\(00\) 00000\-0000` |
-| Ativo | ftBoolean | — | DBCheckBox |
-| Certificado | ftString | 100 | Nome do cert digital (combo Win Cert Store) |
+| Campo | Tipo Firebird | Notas |
+|---|---|---|
+| Codigo | INTEGER PK | autoinc via `SEQUENCE GEN_FUNCIONARIOS_ID` + trigger `FUNCIONARIOS_BI` (e atribuição client-side em `BeforePost`) |
+| Nome | VARCHAR(60) | obrigatório |
+| CPF | VARCHAR(14) | EditMask `000\.000\.000\-00` |
+| Cargo | VARCHAR(40) | |
+| Salario | NUMERIC(15,2) | DisplayFormat `R$ #,##0.00` (cast via `TNumericField`, não `TCurrencyField`) |
+| DataAdmissao | DATE | EditMask `00/00/0000` |
+| Email | VARCHAR(80) | |
+| Telefone | VARCHAR(20) | EditMask `!\(00\) 00000\-0000` |
+| Ativo | BOOLEAN | nativo FB3; DBCheckBox |
+| Certificado | VARCHAR(100) | Nome do cert digital (combo Win Cert Store) |
 
-Migração de schema: detectada via `Table1.FindField('Certificado') = nil`. Se faltar, prompt + recria tabela.
+Migração de schema: detectada via `ColunaExiste('FUNCIONARIOS','CERTIFICADO')`. Se faltar, `ALTER TABLE ADD` (Firebird não perde dados, diferente do Paradox).
+
+## Conexão Firebird (ZeosLib)
+
+- Componentes criados em **runtime** no `FormCreate` (`CriarConexao`) — não estão no DFM, para evitar erros de "property does not exist" entre versões do Zeos.
+- `Protocol = 'firebird'` (Zeos 8, protocolo unificado — detecta versão e embedded). Em Zeos 7.x seria `'firebird-3.0'`/`'firebird-2.5'`.
+- `HostName = ''` → modo **Embedded**. `User='SYSDBA'`, `Password='masterkey'`, `ClientCodepage='WIN1252'`.
+- Banco criado on-the-fly via `Properties['CreateNewDatabase']` quando o `.fdb` não existe.
+- **Delphi 7 gera EXE 32-bit → exige Firebird/fbclient.dll 32-bit.**
+- DDL roda via `TZQuery.ExecSQL` (AutoCommit faz commit do DDL). Identificadores Firebird são UPPERCASE; `FieldByName` é case-insensitive, então `'Nome'` casa com `NOME`.
 
 ## Regras CRÍTICAS de edição de fontes
 
